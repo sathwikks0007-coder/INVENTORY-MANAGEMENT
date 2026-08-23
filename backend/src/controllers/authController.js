@@ -15,14 +15,16 @@ const register = async (req, res) => {
   try {
     const { name, email, password, role, phone } = req.body;
 
-    const userExists = await User.findOne({ email });
+    const cleanEmail = email ? email.toLowerCase().trim() : '';
+
+    const userExists = await User.findOne({ email: cleanEmail });
     if (userExists) {
       return res.status(400).json({ success: false, message: 'User already exists with this email' });
     }
 
     const user = await User.create({
       name,
-      email,
+      email: cleanEmail,
       password,
       role: role || 'Store Staff',
       phone: phone || ''
@@ -30,7 +32,7 @@ const register = async (req, res) => {
 
     const token = generateToken(user._id);
 
-    await logAudit(user, 'USER_REGISTER', 'User', user._id.toString(), `User registered: ${email}`);
+    await logAudit(user, 'USER_REGISTER', 'User', user._id.toString(), `User registered: ${cleanEmail}`);
 
     res.status(201).json({
       success: true,
@@ -59,7 +61,8 @@ const login = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Please provide email and password' });
     }
 
-    const user = await User.findOne({ email }).select('+password');
+    const cleanEmail = email ? email.toLowerCase().trim() : '';
+    const user = await User.findOne({ email: cleanEmail }).select('+password');
 
     if (!user || !(await user.matchPassword(password))) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });

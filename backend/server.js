@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 
 const connectDB = require('./src/config/database');
+const User = require('./src/models/User');
 
 // Import Route Handlers
 const authRoutes = require('./src/routes/authRoutes');
@@ -33,17 +34,38 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Connect Database
-connectDB();
+// Auto-Bootstrap Default Admin Account on Server Startup
+const bootstrapDefaultUsers = async () => {
+  try {
+    const adminExists = await User.findOne({ email: 'admin@erp.com' });
+    if (!adminExists) {
+      await User.create({
+        name: 'Administrator User',
+        email: 'admin@erp.com',
+        password: 'Admin@123',
+        role: 'Administrator',
+        phone: '+91 99999 11111'
+      });
+      console.log('[Auto-Bootstrap]: Default Admin (admin@erp.com / Admin@123) created successfully.');
+    }
+  } catch (err) {
+    console.error('[Auto-Bootstrap Error]:', err.message);
+  }
+};
+
+// Connect Database & Bootstrap
+connectDB().then(() => {
+  bootstrapDefaultUsers();
+});
 
 // Security Middlewares
-app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }));
 app.use(mongoSanitize());
 
 // Rate Limiting for Auth
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 mins
-  max: 100, // 100 requests per IP
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: { success: false, message: 'Too many requests from this IP, please try again later.' }
 });
 
@@ -59,7 +81,7 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Static Files
+// Static Uploads
 app.use('/uploads', express.static(uploadsDir));
 
 // Mount API Routes
@@ -77,19 +99,26 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/settings', settingsRoutes);
 
-// Healthcheck Endpoint
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    status: 'ONLINE',
-    system: 'Inventory & Billing Management ERP API',
-    timestamp: new Date()
+// Serve Frontend Static Dist if present (Single Monorepo Render Service)
+const frontendDist = path.join(__dirname, '../frontend/dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (req, res, next) => {
+    if (req.originalUrl.startsWith('/api') || req.originalUrl.startsWith('/uploads')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDist, 'index.html'));
   });
-});
-
-// 404 Route Handler
-app.use((req, res) => {
-  res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found on server.` });
-});
+} else {
+  // Healthcheck Endpoint
+  app.get('/api/health', (req, res) => {
+    res.status(200).json({
+      status: 'ONLINE',
+      system: 'Inventory & Billing Management ERP API',
+      timestamp: new Date()
+    });
+  });
+}
 
 // Centralized Error Handler
 app.use((err, req, res, next) => {
