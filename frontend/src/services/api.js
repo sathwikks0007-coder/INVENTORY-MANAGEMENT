@@ -1,6 +1,15 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Smart Base URL: Auto-detects local vs production deployed environment
+let API_BASE_URL = import.meta.env.VITE_API_URL;
+
+if (!API_BASE_URL) {
+  if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
+    API_BASE_URL = '/api';
+  } else {
+    API_BASE_URL = 'http://localhost:5000/api';
+  }
+}
 
 const api = axios.create({
   baseURL: API_BASE_URL,
