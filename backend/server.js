@@ -31,32 +31,40 @@ const PORT = process.env.PORT || 5000;
 // Ensure public uploads directory exists
 const uploadsDir = path.join(__dirname, 'public/uploads');
 if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+  try {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  } catch (e) {}
 }
 
-// Auto-Bootstrap Default Admin Account on Server Startup
-const bootstrapDefaultUsers = async () => {
+// Ensure MongoDB Atlas Connection & Admin User Auto-Bootstrap
+let isDbConnected = false;
+const ensureDbConnection = async (req, res, next) => {
   try {
-    const adminExists = await User.findOne({ email: 'admin@erp.com' });
-    if (!adminExists) {
-      await User.create({
-        name: 'Administrator User',
-        email: 'admin@erp.com',
-        password: 'Admin@123',
-        role: 'Administrator',
-        phone: '+91 99999 11111'
-      });
-      console.log('[Auto-Bootstrap]: Default Admin (admin@erp.com / Admin@123) created successfully.');
+    if (!isDbConnected) {
+      await connectDB();
+      isDbConnected = true;
+      // Auto-bootstrap default admin user
+      const adminExists = await User.findOne({ email: 'admin@erp.com' });
+      if (!adminExists) {
+        await User.create({
+          name: 'Administrator User',
+          email: 'admin@erp.com',
+          password: 'Admin@123',
+          role: 'Administrator',
+          phone: '+91 99999 11111'
+        });
+        console.log('[Auto-Bootstrap]: Default Admin (admin@erp.com / Admin@123) created successfully.');
+      }
     }
+    next();
   } catch (err) {
-    console.error('[Auto-Bootstrap Error]:', err.message);
+    console.error('[DB Middleware Error]:', err.message);
+    res.status(500).json({ success: false, message: 'Database connection failed. ' + err.message });
   }
 };
 
-// Connect Database & Bootstrap
-connectDB().then(() => {
-  bootstrapDefaultUsers();
-});
+// Apply DB Middleware
+app.use(ensureDbConnection);
 
 // Security Middlewares
 app.use(helmet({ crossOriginResourcePolicy: false, contentSecurityPolicy: false }));
@@ -99,7 +107,16 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/settings', settingsRoutes);
 
-// Serve Frontend Static Dist if present (Single Monorepo Render Service)
+// Healthcheck Endpoint
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ONLINE',
+    system: 'Inventory & Billing Management ERP API',
+    timestamp: new Date()
+  });
+});
+
+// Serve Frontend Static Dist if present
 const frontendDist = path.join(__dirname, '../frontend/dist');
 if (fs.existsSync(frontendDist)) {
   app.use(express.static(frontendDist));
@@ -108,15 +125,6 @@ if (fs.existsSync(frontendDist)) {
       return next();
     }
     res.sendFile(path.join(frontendDist, 'index.html'));
-  });
-} else {
-  // Healthcheck Endpoint
-  app.get('/api/health', (req, res) => {
-    res.status(200).json({
-      status: 'ONLINE',
-      system: 'Inventory & Billing Management ERP API',
-      timestamp: new Date()
-    });
   });
 }
 
@@ -131,6 +139,11 @@ app.use((err, req, res, next) => {
 });
 
 // Start Express Server
-app.listen(PORT, () => {
-  console.log(`[Inventory & Billing Backend Active]: http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`[Inventory & Billing Backend Active]: http://localhost:${PORT}`);
+  });
+}
+
+// Export Express App for Vercel Serverless Function compatibility
+module.exports = app;
