@@ -9,13 +9,12 @@ if (dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
 }
 
+const DEFAULT_ATLAS_URI = 'mongodb+srv://sathwikks0007_db_user:bsSBjVRL8hWIJs3D@cluster0.gdvm2yk.mongodb.net/inventory_db?appName=Cluster0';
+
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI;
-    if (!mongoURI) {
-      console.error('CRITICAL ERROR: MONGODB_URI is not defined in environment variables.');
-      process.exit(1);
-    }
+    const mongoURI = process.env.MONGODB_URI || DEFAULT_ATLAS_URI;
+    console.log('[Connecting to MongoDB Atlas...]');
     const conn = await mongoose.connect(mongoURI, {
       serverSelectionTimeoutMS: 10000
     });
